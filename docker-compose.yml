@@ -1,0 +1,110 @@
+version: '3.7'
+
+services:
+
+  # SIP server
+  routr:
+    env_file: .env
+    image: psanders/routr:rtpengine_support
+    depends_on: [redis]
+    environment: 
+      DATA_SOURCE_PROVIDER: ${ROUTR_DATA_SOURCE_PROVIDER}
+      DATA_SOURCE_PARAMETERS: ${ROUTR_DATA_SOURCE_PARAMETERS}
+      EX_MEDIA_ENGINE_HOST: ${ROUTR_MEDIA_ENGINE_HOST}
+      EX_MEDIA_ENGINE_PORT: ${ROUTR_MEDIA_ENGINE_PORT}
+    ports:
+      - ${ROUTR_SIP_PORTS}
+      - ${ROUTR_API_PORT}:${ROUTR_API_PORT}
+    volumes:  
+      - ./config/routr/log4j2.yml:/opt/routr/config/log4j2.yml
+      - ./config/routr/config.yml:/opt/routr/config/config.yml
+      - /Users/pedrosanders/Projects/routr/libs/server.bundle.js:/opt/routr/libs/server.bundle.js
+      - /Users/pedrosanders/Projects/routr/libs/registry.bundle.js:/opt/routr/libs/registry.bundle.js
+      - /Users/pedrosanders/Projects/routr/libs/route_loader.bundle.js:/opt/routr/libs/route_loader.bundle.js
+    networks:
+      rar-scaling:
+        aliases:
+          - routr.rar-scaling
+
+  # VoIP network bootstrap
+  routr-bootstrap:
+    env_file: .env
+    build:
+      context: .rctl
+    entrypoint: |
+      sh -c '
+        /wait-for-it.sh -t 0 ${ROUTR_HOST}:${ROUTR_API_PORT}
+        rctl login https://${ROUTR_HOST}:${ROUTR_API_PORT}/api/v1beta1 \
+          -u ${ROUTR_API_USERNAME} -p ${ROUTR_API_SECRET}
+        rctl create -f /etc/bootstrap.yml
+      '
+    volumes:
+      - ./config/routr/bootstrap.yml:/etc/bootstrap.yml:ro
+      - ./etc/wait-for-it.sh:/wait-for-it.sh
+    networks:
+      rar-scaling:
+
+  # Support for basic media server capabilities such as IVR, Recording, etc.
+  mediaserver:
+    env_file: .env
+    image: fonoster/fonos-mediaserver:latest
+    restart: always
+    environment:
+      AGI_URL: ${ASTERISK_AGI_URL}
+      SIPPROXY_HOST: ${ASTERISK_SIPPROXY_HOST}
+      SIPPROXY_USERNAME: ${ASTERISK_SIPPROXY_USERNAME}
+      SIPPROXY_SECRET: ${ASTERISK_SIPPROXY_SECRET} 
+    ports: 
+      - ${ASTERISK_SIP_PORT}:${ASTERISK_SIP_PORT}
+    volumes:
+      - ./config/asterisk/extensions.conf:/etc/asterisk/extensions.conf
+      - ./config/asterisk/rtp.conf:/etc/asterisk/rtp.conf
+    networks:
+      rar-scaling:
+
+  # DB support for Routr's operations
+  redis:
+    image: redis:6.0.3-alpine
+    command: ['redis-server', '--appendonly', 'yes']
+    hostname: redis
+    expose: 
+      - ${REDIS_PORT}
+    networks:
+      rar-scaling:
+        aliases:
+          - redis.rar-scaling
+
+  # Media relay engine
+  rtpengine:
+    env_file: .env
+    image: psanders/rtpengine:latest
+    restart: always
+    ports: 
+      - ${RTPE_NG_PORT}:${RTPE_NG_PORT}/udp 
+      - ${RTPE_PORT_MIN}-${RTPE_PORT_MAX}:${RTPE_PORT_MIN}-${RTPE_PORT_MAX}/udp
+    environment:
+      PUBLIC_IP: ${EXTERN_ADDR}
+      PORT_MIN: ${RTPE_PORT_MIN}
+      PORT_MAX: ${RTPE_PORT_MAX}
+    networks:
+      rar-scaling:
+        aliases:
+          - rtpengine.rar-scaling
+
+  # Media relay engine helper
+  rtpengine-middleware:
+    env_file: .env
+    image: psanders/rtpengine-mw:latest
+    restart: always
+    environment:
+      REMOTE_HOST: ${RTPEMW_REMOTE_HOST}
+    ports: 
+      - ${RTPEMW_PORT}:${RTPEMW_PORT}/tcp
+    networks:
+      rar-scaling:
+        aliases:
+          - rtpengine-middleware.rar-scaling
+
+# Custom network so all services can communicate using a FQDN
+networks:
+  rar-scaling:
