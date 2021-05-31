@@ -45,7 +45,7 @@ services:
       rar-scaling:
 
   # Support for basic media server capabilities such as IVR, Recording, etc.
-  mediaserver:
+  asterisk_n1:
     env_file: .env
     image: fonoster/fonos-mediaserver:latest
     restart: always
@@ -74,22 +74,39 @@ services:
         aliases:
           - redis.rar-scaling
 
-  # Media relay engine
-  rtpengine:
+  # Media relay engine node 1
+  rtpengine_n1:
     env_file: .env
     image: psanders/rtpengine:latest
     restart: always
     ports: 
-      - ${RTPE_NG_PORT}:${RTPE_NG_PORT}/udp 
-      - ${RTPE_PORT_MIN}-${RTPE_PORT_MAX}:${RTPE_PORT_MIN}-${RTPE_PORT_MAX}/udp
+      - ${RTPE_N1_NG_PORT}:${RTPE_N1_NG_PORT}/udp 
+      - ${RTPE_N1_PORT_MIN}-${RTPE_N1_PORT_MAX}:${RTPE_N1_PORT_MIN}-${RTPE_N1_PORT_MAX}/udp
     environment:
       PUBLIC_IP: ${EXTERN_ADDR}
-      PORT_MIN: ${RTPE_PORT_MIN}
-      PORT_MAX: ${RTPE_PORT_MAX}
+      PORT_MIN: ${RTPE_N1_PORT_MIN}
+      PORT_MAX: ${RTPE_N1_PORT_MAX}
     networks:
       rar-scaling:
         aliases:
-          - rtpengine.rar-scaling
+          - rtpengine.n1.rar-scaling          
+
+  # Media relay engine node 2
+  rtpengine_n2:
+    env_file: .env
+    image: psanders/rtpengine:latest
+    restart: always
+    ports: 
+      - ${RTPE_N2_NG_PORT}:${RTPE_N2_NG_PORT}/udp 
+      - ${RTPE_N2_PORT_MIN}-${RTPE_N2_PORT_MAX}:${RTPE_N2_PORT_MIN}-${RTPE_N2_PORT_MAX}/udp
+    environment:
+      PUBLIC_IP: ${EXTERN_ADDR}
+      PORT_MIN: ${RTPE_N2_PORT_MIN}
+      PORT_MAX: ${RTPE_N2_PORT_MAX}
+    networks:
+      rar-scaling:
+        aliases:
+          - rtpengine.n2.rar-scaling          
 
   # Media relay engine helper
   rtpengine-middleware:
